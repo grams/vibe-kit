@@ -1,0 +1,59 @@
+{
+  "name": "vibe-kit",
+  "version": "0.0.1",
+  "description": "Socle pour apps Cloudflare Workers : auth Google + lien magique sur D1, client navigateur, migrations.",
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "d1",
+    "hono",
+    "better-auth",
+    "auth"
+  ],
+  "license": "MIT",
+  "author": "grams",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grams/vibe-kit.git"
+  },
+  "homepage": "https://github.com/grams/vibe-kit#readme",
+  "bugs": "https://github.com/grams/vibe-kit/issues",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "vibe-kit": "bin/vibe-kit.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "migrations"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build",
+    "version": "node scripts/sync-version.mjs && git add src/version.ts"
+  },
+  "dependencies": {
+    "better-auth": "~1.7.10",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261018.1",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
