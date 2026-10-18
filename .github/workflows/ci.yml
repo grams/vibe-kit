@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  check:
+  kit:
+    name: Kit (types, build, tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -14,7 +15,35 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            test/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - run: npm pack --dry-run
+      - run: npm run test:install
+      - run: npm test
+
+  template:
+    name: Template (types, build) avec ce kit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: vibe-kit
+      - uses: actions/checkout@v5
+        with:
+          repository: grams/vibe-template
+          path: vibe-template
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Construire le kit
+        working-directory: vibe-kit
+        run: npm ci && npm run build
+      - name: Installer le template avec ce kit
+        working-directory: vibe-template
+        run: npm ci && npm install --no-save ../vibe-kit
+      - name: Types et build du template
+        working-directory: vibe-template
+        run: npm run typecheck && npx vite build

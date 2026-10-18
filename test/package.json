@@ -1,0 +1,19 @@
+{
+  "name": "vibe-kit-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsc -p tsconfig.json && vitest run && node --test cli.test.mjs"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.12",
+    "@cloudflare/vitest-plugin": "^1.4.4",
+    "wrangler": "^4.151.1",
+    "@cloudflare/workers-types": "^5.20261018.1",
+    "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "workerd": true
+  }
+}

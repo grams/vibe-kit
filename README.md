@@ -122,6 +122,14 @@ import "vibe-kit/react/styles.css";
 | `npx vibe-kit sync` | Copie les migrations du kit manquantes |
 | `npx vibe-kit upgrade [vX.Y.Z]` | Pointe la dépendance sur le dernier tag (ou celui indiqué), `npm install`, puis `sync` |
 
+## Développer le kit
+
+```sh
+npm install && npm run build
+npm run test:install   # une fois : outils de test (sous-paquet test/)
+npm test               # tests dans le runtime Workers + tests de la CLI
+```
+
 ## Publier une version (mainteneur)
 
 Une version est un **tag Git** `vX.Y.Z` :

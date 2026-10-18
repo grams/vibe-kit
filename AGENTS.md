@@ -31,6 +31,7 @@ Le kit **ne lit ni n'écrit jamais** les tables, routes ou variables d'une app (
 | `src/react/styles.css` | Styles des écrans par défaut (`.kit-*`, `--kit-*`) |
 | `migrations/` | Schéma des tables `kit_*` |
 | `bin/vibe-kit.mjs` | CLI `version`, `sync`, `upgrade` |
+| `test/` | Tests (sous-paquet à part : ses outils ne sont jamais installés par les apps) |
 
 ## Compatibilité avec les apps
 
@@ -43,8 +44,15 @@ Le kit **ne lit ni n'écrit jamais** les tables, routes ou variables d'une app (
 ## Vérifier un changement
 
 1. `npm run typecheck` puis `npm run build`.
-2. Tester dans le template : dans `vibe-template`, `npm install ../vibe-kit` (ou `npm install git+https://github.com/grams/vibe-kit.git#<branche>`), `npm run kit:sync`, `npm run db:migrate`, `npm run dev` avec `KIT_EMAIL_LOG=1` dans `.dev.vars` (le lien de connexion s'affiche dans le terminal).
-3. Vérifier : connexion, refus d'un compte non invité, back-office (accès, invitations, utilisateurs), profil, mode sombre.
+2. **Tests** : `npm run test:install` (une fois) puis `npm test`.
+   - `test/kit.test.ts` : intégration dans le runtime Workers avec une base D1 locale (connexion par lien magique, accès restreint, invitations, domaines, back-office, profil, suppression en cascade) ;
+   - `test/protect.test.ts` : règles de protection ;
+   - `test/cli.test.mjs` : CLI (`sync`, erreurs).
+   Tout changement de comportement s'accompagne d'un test ; tout bug corrigé, d'un test qui l'aurait détecté.
+3. La CI (`.github/workflows/ci.yml`) rejoue tout cela et construit **vibe-template** avec le kit du commit : un changement qui casse le template casse la CI.
+4. Pour un essai manuel : dans `vibe-template`, `npm install ../vibe-kit`, `npm run kit:sync`, `npm run db:migrate`, `npm run dev` avec `KIT_EMAIL_LOG=1` dans `.dev.vars` (le lien de connexion s'affiche dans le terminal).
+
+**Ne jamais ajouter d'outil de test aux `devDependencies` racine** : une app qui installe le kit depuis GitHub installe ces dépendances pour le construire. Les outils de test vont dans `test/package.json`.
 
 ## Versions
 
