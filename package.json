@@ -1,12 +1,13 @@
 {
   "name": "vibe-kit",
   "version": "0.0.1",
-  "description": "Socle pour apps Cloudflare Workers : auth Google + lien magique sur D1, client navigateur, migrations.",
+  "description": "Socle pour apps Cloudflare Workers + React : auth Google sur D1, contrôle d'accès, back-office, profil d'app.",
   "keywords": [
     "cloudflare",
     "workers",
     "d1",
     "hono",
+    "react",
     "better-auth",
     "auth"
   ],
@@ -19,12 +20,19 @@
   "homepage": "https://github.com/grams/vibe-kit#readme",
   "bugs": "https://github.com/grams/vibe-kit/issues",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./react/styles.css": "./dist/react/styles.css",
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.ts",
@@ -40,9 +48,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run build",
+    "build": "rm -rf dist node_modules/.tmp && tsc -b && cp src/react/styles.css dist/react/styles.css",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.react.json --noEmit",
+    "prepublishOnly": "npm run build",
     "version": "node scripts/sync-version.mjs && git add src/version.ts"
   },
   "dependencies": {
@@ -51,9 +59,19 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261018.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "react": "^19.3.1",
+    "@types/react": "^19.3.0"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   }
 }

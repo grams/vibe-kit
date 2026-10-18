@@ -1,0 +1,134 @@
+/*
+ * vibe-kit — styles de l'interface du socle.
+ * Personnaliser en redéfinissant les variables --kit-* (ex. dans le CSS de l'app, après cet import).
+ * Toutes les classes sont préfixées kit- : elles n'entrent jamais en conflit avec celles de l'app.
+ */
+:root {
+  --kit-bg: #f7f7f5;
+  --kit-surface: #ffffff;
+  --kit-text: #1c1b19;
+  --kit-muted: #6b6862;
+  --kit-border: #e3e0da;
+  --kit-primary: #1c1b19;
+  --kit-primary-text: #ffffff;
+  --kit-danger: #b42318;
+  --kit-success: #067647;
+  --kit-radius: 10px;
+  --kit-font: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --kit-bg: #161514;
+    --kit-surface: #201f1d;
+    --kit-text: #f1efea;
+    --kit-muted: #a19d95;
+    --kit-border: #34322e;
+    --kit-primary: #f1efea;
+    --kit-primary-text: #161514;
+    --kit-danger: #f97066;
+    --kit-success: #47cd89;
+  }
+}
+
+.kit-center {
+  min-height: 70vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  font-family: var(--kit-font);
+  color: var(--kit-text);
+}
+.kit-card {
+  background: var(--kit-surface);
+  border: 1px solid var(--kit-border);
+  border-radius: var(--kit-radius);
+  padding: 24px;
+  color: var(--kit-text);
+}
+.kit-login { width: 100%; max-width: 400px; display: grid; gap: 12px; }
+.kit-title { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.kit-subtitle { font-size: 1.05rem; font-weight: 600; margin: 0; }
+.kit-muted { color: var(--kit-muted); margin: 0; font-size: 0.92rem; }
+.kit-label { font-size: 0.9rem; font-weight: 600; }
+.kit-stack { display: grid; gap: 10px; }
+.kit-stack-lg { display: grid; gap: 16px; }
+.kit-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.kit-row > .kit-input { flex: 1 1 220px; }
+
+.kit-input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 9px 12px;
+  border: 1px solid var(--kit-border);
+  border-radius: calc(var(--kit-radius) - 2px);
+  background: var(--kit-bg);
+  color: var(--kit-text);
+  min-width: 0;
+}
+.kit-input:focus { outline: 2px solid var(--kit-primary); outline-offset: 1px; }
+
+.kit-btn {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: calc(var(--kit-radius) - 2px);
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: none;
+  color: var(--kit-text);
+}
+.kit-btn:disabled { opacity: 0.6; cursor: wait; }
+.kit-btn-block { width: 100%; }
+.kit-btn-primary { background: var(--kit-primary); color: var(--kit-primary-text); }
+.kit-btn-outline { border-color: var(--kit-border); background: var(--kit-surface); }
+.kit-btn-ghost { color: var(--kit-muted); padding: 6px 10px; }
+.kit-btn-ghost:hover { color: var(--kit-text); }
+.kit-btn-danger { color: var(--kit-danger); border-color: var(--kit-border); padding: 6px 12px; }
+
+.kit-divider { display: flex; align-items: center; gap: 12px; color: var(--kit-muted); font-size: 0.85rem; margin: 4px 0; }
+.kit-divider::before, .kit-divider::after { content: ""; flex: 1; border-top: 1px solid var(--kit-border); }
+.kit-error { color: var(--kit-danger); margin: 0; font-size: 0.92rem; }
+.kit-success { color: var(--kit-success); margin: 0; font-size: 0.92rem; }
+
+.kit-admin { display: grid; gap: 16px; color: var(--kit-text); font-family: var(--kit-font); }
+.kit-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--kit-border); overflow-x: auto; }
+.kit-tab {
+  font: inherit;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  color: var(--kit-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kit-tab-active { color: var(--kit-text); border-bottom-color: var(--kit-primary); font-weight: 600; }
+.kit-radio { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.kit-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.kit-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--kit-border);
+  overflow-wrap: anywhere;
+}
+.kit-list-item:first-child { border-top: none; }
+.kit-user { display: flex; align-items: center; gap: 10px; }
+.kit-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--kit-border); flex: none; object-fit: cover; }
+.kit-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--kit-border);
+  color: var(--kit-muted);
+  vertical-align: middle;
+}
