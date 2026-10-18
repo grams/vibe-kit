@@ -6,10 +6,10 @@ Le plus simple est de partir de **[vibe-template](https://github.com/grams/vibe-
 
 ## Installation
 
-Le kit s'installe directement depuis GitHub (pas de publication npm) ; npm le construit à l'installation (script `prepare`).
+Le kit s'installe directement depuis GitHub, en HTTPS (pas de publication npm, aucune clé SSH nécessaire) ; npm le construit à l'installation (script `prepare`).
 
 ```json
-"dependencies": { "vibe-kit": "github:grams/vibe-kit#vX.Y.Z" }
+"dependencies": { "vibe-kit": "git+https://github.com/grams/vibe-kit.git#vX.Y.Z" }
 ```
 
 Sans `#vX.Y.Z`, npm prend le dernier commit de la branche par défaut (figé ensuite par le `package-lock.json`).

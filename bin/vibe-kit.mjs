@@ -4,7 +4,8 @@
 //   npx vibe-kit sync             copie les migrations SQL du kit qui manquent dans ./migrations
 //   npx vibe-kit upgrade [vX.Y.Z] installe la dernière version (ou celle indiquée), puis sync
 //
-// Le kit s'installe depuis GitHub : "vibe-kit": "github:compte/vibe-kit#vX.Y.Z"
+// Le kit s'installe depuis GitHub en HTTPS (aucune clé SSH nécessaire) :
+//   "vibe-kit": "git+https://github.com/compte/vibe-kit.git#vX.Y.Z"
 // (sans #vX.Y.Z : dernier commit de la branche par défaut).
 import { readFileSync, writeFileSync, readdirSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -35,8 +36,8 @@ function installedVersion() {
 function depSpec(pkg) {
   const spec = pkg.dependencies?.[PKG];
   if (!spec) fail(`${PKG} n'est pas dans les dépendances de l'app.`);
-  const m = spec.match(/^(?:github:)?([\w.-]+\/[\w.-]+?)(?:\.git)?(?:#(.+))?$/);
-  if (!m) fail(`Dépendance ${PKG} inattendue : "${spec}" (attendu : github:compte/${PKG}#vX.Y.Z)`);
+  const m = spec.match(/^(?:github:|git\+https:\/\/github\.com\/|https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?(?:#(.+))?$/);
+  if (!m) fail(`Dépendance ${PKG} inattendue : "${spec}" (attendu : git+https://github.com/compte/${PKG}.git#vX.Y.Z)`);
   return { spec, repo: m[1], ref: m[2] ?? null };
 }
 
@@ -127,10 +128,10 @@ if (cmd === "version") {
       console.log(`Déjà à jour (${from}).`);
       process.exit(0);
     }
-    spec = `github:${repo}#${target}`;
+    spec = `git+https://github.com/${repo}.git#${target}`;
   } else {
     // Pas de tag : on suit la branche par défaut et on récupère son dernier commit.
-    spec = `github:${repo}`;
+    spec = `git+https://github.com/${repo}.git`;
   }
   pkg.dependencies[PKG] = spec;
   writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n");
