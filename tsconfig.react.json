@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "rootDir": "src/react",
+    "outDir": "dist/react",
+    "composite": true,
+    "tsBuildInfoFile": "node_modules/.tmp/react.tsbuildinfo"
+  },
+  "include": ["src/react/*.tsx", "src/react/*.ts"]
+}

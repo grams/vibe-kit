@@ -8,27 +8,27 @@ export interface EmailMessage {
 export type SendEmail = (msg: EmailMessage) => Promise<void>;
 
 interface EmailEnv {
-  RESEND_API_KEY?: string;
-  EMAIL_FROM?: string;
+  KIT_RESEND_API_KEY?: string;
+  KIT_EMAIL_FROM?: string;
 }
 
 /**
- * Envoie un email via Resend si RESEND_API_KEY est défini.
+ * Envoie un email via Resend si KIT_RESEND_API_KEY est défini.
  * Sinon, affiche le contenu dans les logs (pratique en local avec `wrangler dev`).
  */
 export async function sendEmail(env: EmailEnv, msg: EmailMessage): Promise<void> {
-  if (!env.RESEND_API_KEY) {
-    console.log(`\n[vibe-kit] Email non envoyé (pas de RESEND_API_KEY)\nÀ : ${msg.to}\n${msg.text}\n`);
+  if (!env.KIT_RESEND_API_KEY) {
+    console.log(`\n[kit] Email non envoyé (pas de KIT_RESEND_API_KEY)\nÀ : ${msg.to}\n${msg.text}\n`);
     return;
   }
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      authorization: `Bearer ${env.KIT_RESEND_API_KEY}`,
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      from: env.EMAIL_FROM || "onboarding@resend.dev",
+      from: env.KIT_EMAIL_FROM || "onboarding@resend.dev",
       to: [msg.to],
       subject: msg.subject,
       html: msg.html,

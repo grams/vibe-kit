@@ -61,7 +61,7 @@ function sync(libDir = join(APP_DIR, "node_modules", PKG)) {
   let next = existing.reduce((max, f) => Math.max(max, parseInt(f, 10) || 0), 0) + 1;
   const added = [];
   for (const file of readdirSync(src).filter((f) => f.endsWith(".sql")).sort()) {
-    const suffix = `_vibekit-${file}`;
+    const suffix = `_kit-${file}`;
     if (existing.some((f) => f.endsWith(suffix))) continue;
     const target = `${String(next++).padStart(4, "0")}${suffix}`;
     copyFileSync(join(src, file), join(dest, target));
@@ -71,7 +71,7 @@ function sync(libDir = join(APP_DIR, "node_modules", PKG)) {
     console.log(`Migrations ajoutées :\n${added.map((f) => `  + ${f}`).join("\n")}`);
     console.log("À appliquer : npm run db:migrate (local) puis npm run db:migrate:remote (prod).");
   } else {
-    console.log("Migrations vibe-kit : rien à ajouter.");
+    console.log("Migrations du kit : rien à ajouter.");
   }
   return added;
 }
