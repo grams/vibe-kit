@@ -38,6 +38,7 @@ Le kit **ne lit ni n'écrit jamais** les tables, routes ou variables d'une app (
 2. **API publique** (exports de `vibe-kit` et `vibe-kit/react`, options, routes `/api/kit/*`, variables `KIT_*`, classes et variables CSS) : ajouter plutôt que modifier. Un changement incompatible impose une version majeure.
 3. **Interface surchargeable** : tout nouvel écran du kit doit passer par `KitComponents` (remplaçable), s'appuyer sur un hook sans interface, et n'utiliser que des classes `.kit-*` stylées par des variables `--kit-*`.
 4. **Pas de nouvelle dépendance lourde** côté client : React est la seule dépendance d'exécution de `vibe-kit/react`.
+5. **Relais OAuth des aperçus** (`KIT_PRODUCTION_URL`) : la connexion Google d'un aperçu passe par la **production**, qui exécute la version du kit qu'elle a déployée. Un changement qui touche au relais (routes `/api/kit/auth/*`, plugin `oauth-proxy`, format de l'état chiffré) doit rester compatible avec la version précédente, ou être déployé en production avant d'être utilisé sur un aperçu. À signaler dans la note de version.
 
 ## Vérifier un changement
 
