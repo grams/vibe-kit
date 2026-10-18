@@ -49,8 +49,8 @@
   },
   "scripts": {
     "build": "rm -rf dist node_modules/.tmp && tsc -b && cp src/react/styles.css dist/react/styles.css",
+    "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.react.json --noEmit",
-    "prepublishOnly": "npm run build",
     "version": "node scripts/sync-version.mjs && git add src/version.ts"
   },
   "dependencies": {
@@ -62,9 +62,6 @@
     "typescript": "^5.9.3",
     "react": "^19.3.1",
     "@types/react": "^19.3.0"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0"

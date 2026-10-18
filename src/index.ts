@@ -8,7 +8,7 @@
  */
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { betterAuth } from "better-auth";
-import { magicLink } from "better-auth/plugins";
+import { magicLink, oAuthProxy } from "better-auth/plugins";
 import { sendEmail, magicLinkEmail, type SendEmail } from "./email.js";
 import { createProfileStore, type ProfileOptions, type ProfileStore } from "./profile.js";
 import { compileRules, type ProtectOptions } from "./protect.js";
@@ -27,6 +27,11 @@ export interface KitEnv {
   KIT_AUTH_SECRET: string;
   /** URL publique de l'app ; déduite de la requête si absente. */
   KIT_BASE_URL?: string;
+  /**
+   * URL de production, ex. https://mon-app.compte.workers.dev. Si définie, la connexion Google des
+   * aperçus passe par la production : une seule URL de redirection à déclarer chez Google.
+   */
+  KIT_PRODUCTION_URL?: string;
   /** Connexion Google : activée si les deux sont définis. */
   KIT_GOOGLE_CLIENT_ID?: string;
   KIT_GOOGLE_CLIENT_SECRET?: string;
@@ -169,18 +174,40 @@ export function createKit<E extends KitEnv = KitEnv, P extends Record<string, un
 
 function createAuth<E extends KitEnv, P>(env: E, origin: string, options: KitOptions<E, P>) {
   const baseURL = env.KIT_BASE_URL || origin;
+  const productionURL = env.KIT_PRODUCTION_URL?.replace(/\/+$/, "");
   const google =
     env.KIT_GOOGLE_CLIENT_ID && env.KIT_GOOGLE_CLIENT_SECRET
-      ? { google: { clientId: env.KIT_GOOGLE_CLIENT_ID, clientSecret: env.KIT_GOOGLE_CLIENT_SECRET } }
+      ? {
+          google: {
+            clientId: env.KIT_GOOGLE_CLIENT_ID,
+            clientSecret: env.KIT_GOOGLE_CLIENT_SECRET,
+            // Avec un relais : Google renvoie toujours vers la production, qui retransmet à l'aperçu.
+            ...(productionURL ? { redirectURI: `${productionURL}${AUTH_BASE}/callback/google` } : {}),
+          },
+        }
       : undefined;
   const send = options.sendEmail ?? ((msg) => sendEmail(env, msg));
+  const trustedOrigins = [baseURL, ...(productionURL ? [productionURL, ...previewOrigins(productionURL)] : [])];
+  const plugins = [
+    ...(productionURL && google ? [oAuthProxy({ productionURL })] : []),
+    ...(emailEnabled(env, options)
+      ? [
+          magicLink({
+            expiresIn: 60 * 15,
+            sendMagicLink: async ({ email, url }) => {
+              await send(magicLinkEmail(options.appName, email, url));
+            },
+          }),
+        ]
+      : []),
+  ];
 
   return betterAuth({
     appName: options.appName,
     baseURL,
     basePath: AUTH_BASE,
     secret: env.KIT_AUTH_SECRET,
-    trustedOrigins: [baseURL],
+    trustedOrigins,
     database: env.DB,
     user: { modelName: "kit_user" },
     session: {
@@ -214,17 +241,18 @@ function createAuth<E extends KitEnv, P>(env: E, origin: string, options: KitOpt
         },
       },
     },
-    plugins: emailEnabled(env, options)
-      ? [
-          magicLink({
-            expiresIn: 60 * 15,
-            sendMagicLink: async ({ email, url }) => {
-              await send(magicLinkEmail(options.appName, email, url));
-            },
-          }),
-        ]
-      : [],
+    plugins,
   });
+}
+
+/** URL d'aperçu Cloudflare d'un Worker *.workers.dev : https://<version-ou-branche>-<worker>.<compte>.workers.dev */
+function previewOrigins(productionURL: string): string[] {
+  try {
+    const { protocol, host } = new URL(productionURL);
+    return host.endsWith(".workers.dev") ? [`${protocol}//*-${host}`] : [];
+  } catch {
+    return [];
+  }
 }
 
 function emailEnabled(env: KitEnv, options: { sendEmail?: SendEmail }) {

@@ -42,9 +42,9 @@ Le kit **ne lit ni n'écrit jamais** les tables, routes ou variables d'une app (
 ## Vérifier un changement
 
 1. `npm run typecheck` puis `npm run build`.
-2. Tester dans le template : `npm pack`, puis dans `vibe-template` `npm install ../vibe-kit/vibe-kit-X.Y.Z.tgz`, `npm run kit:sync`, `npm run db:migrate`, `npm run dev` avec `KIT_EMAIL_LOG=1` dans `.dev.vars` (le lien de connexion s'affiche dans le terminal).
+2. Tester dans le template : dans `vibe-template`, `npm install ../vibe-kit` (ou `npm install github:grams/vibe-kit#<branche>`), `npm run kit:sync`, `npm run db:migrate`, `npm run dev` avec `KIT_EMAIL_LOG=1` dans `.dev.vars` (le lien de connexion s'affiche dans le terminal).
 3. Vérifier : connexion, refus d'un compte non invité, back-office (accès, invitations, utilisateurs), profil, mode sombre.
 
 ## Versions
 
-Pas de version publiée tant que le mainteneur ne l'a pas décidé. Publication : `npm version …` puis `git push --follow-tags` (voir README).
+Le kit s'installe depuis GitHub ; une version est un tag `vX.Y.Z`. Pas de version tant que le mainteneur ne l'a pas décidé. Publication : `npm version …` puis `git push --follow-tags` (voir README).

@@ -4,6 +4,16 @@ Socle pour apps **Cloudflare Workers + React** : connexion Google (et lien par e
 
 Le plus simple est de partir de **[vibe-template](https://github.com/grams/vibe-template)**, qui l'utilise et contient un `AGENTS.md` pour les agents IA.
 
+## Installation
+
+Le kit s'installe directement depuis GitHub (pas de publication npm) ; npm le construit à l'installation (script `prepare`).
+
+```json
+"dependencies": { "vibe-kit": "github:grams/vibe-kit#vX.Y.Z" }
+```
+
+Sans `#vX.Y.Z`, npm prend le dernier commit de la branche par défaut (figé ensuite par le `package-lock.json`).
+
 ## Le préfixe `kit` est réservé au socle
 
 Tout ce qui appartient au kit porte ce préfixe ; une app ne l'utilise jamais. C'est ce qui permet de mettre le kit à jour sans conflit.
@@ -95,6 +105,7 @@ import "vibe-kit/react/styles.css";
 | `KIT_AUTH_SECRET` | oui | Signature des sessions |
 | `KIT_GOOGLE_CLIENT_ID` / `KIT_GOOGLE_CLIENT_SECRET` | pour Google | Connexion Google ; redirection : `https://<domaine>/api/kit/auth/callback/google` |
 | `KIT_BASE_URL` | non | URL publique (déduite de la requête sinon) |
+| `KIT_PRODUCTION_URL` | recommandé | URL de production (`https://mon-app.compte.workers.dev`) : la connexion Google des aperçus passe par la production, une seule URL de redirection à déclarer chez Google |
 | `KIT_ADMIN_EMAILS` | non | Admins en plus de l'option `admins` |
 | `KIT_RESEND_API_KEY` / `KIT_EMAIL_FROM` | non | Active le lien de connexion par email (Resend) |
 | `KIT_EMAIL_LOG` | non | `1` en local : lien par email affiché dans les logs, sans envoi |
@@ -107,15 +118,17 @@ import "vibe-kit/react/styles.css";
 
 | Commande | Effet |
 |---|---|
-| `npx vibe-kit version` | Version installée et dernière version npm |
+| `npx vibe-kit version` | Version installée et dernière version (tags Git du dépôt) |
 | `npx vibe-kit sync` | Copie les migrations du kit manquantes |
-| `npx vibe-kit upgrade [X.Y.Z]` | `npm install vibe-kit@latest` puis `sync` |
+| `npx vibe-kit upgrade [vX.Y.Z]` | Pointe la dépendance sur le dernier tag (ou celui indiqué), `npm install`, puis `sync` |
 
 ## Publier une version (mainteneur)
 
-Première fois uniquement :
-1. `npm login` puis `npm publish` depuis ce dossier (crée le paquet sur npm).
-2. Sur npmjs.com → paquet → *Settings* → *Trusted publishing* : ajouter GitHub Actions, dépôt `grams/vibe-kit`, workflow `publish.yml`, environnement `npm`.
-3. Sur GitHub : *Settings* → *Environments* → créer `npm`.
+Une version est un **tag Git** `vX.Y.Z` :
 
-Ensuite : `npm version patch | minor | major` puis `git push --follow-tags` ; la CI publie avec provenance.
+```sh
+npm version patch   # ou minor / major : met à jour package.json et src/version.ts, commit + tag
+git push --follow-tags
+```
+
+Les apps la récupèrent avec `npm run kit:upgrade`.
