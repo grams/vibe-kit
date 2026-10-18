@@ -22,16 +22,20 @@ Le kit **ne lit ni n'écrit jamais** les tables, routes ou variables d'une app (
 
 | Fichier | Rôle |
 |---|---|
-| `src/index.ts` | `createKit()` : app Hono, auth Better Auth sur D1, protection `/api`, `/api/kit/me`, montage du back-office |
+| `src/index.ts` | `createKit()` : app Hono, auth Better Auth sur D1 (GitHub, Google, connexion locale), protection `/api`, `/api/kit/me`, `/api/kit/status`, montage du back-office |
 | `src/access.ts` | Admins, mode d'accès, domaines, invitations, routes `/api/kit/admin/*` |
 | `src/profile.ts` | Profil d'app 1:1 (lecture/création à la demande, mise à jour) |
 | `src/protect.ts` | Règles de protection des routes `/api` |
-| `src/email.ts` | Envoi d'email (Resend) et contenu du lien magique |
+| `src/secret.ts` | Secret des sessions (variable ou généré dans `kit_settings`) |
 | `src/react/index.tsx` | `vibe-kit/react` : provider, hooks, écrans par défaut, back-office |
 | `src/react/styles.css` | Styles des écrans par défaut (`.kit-*`, `--kit-*`) |
 | `migrations/` | Schéma des tables `kit_*` |
 | `bin/vibe-kit.mjs` | CLI `version`, `sync`, `upgrade` |
 | `test/` | Tests (sous-paquet à part : ses outils ne sont jamais installés par les apps) |
+
+## Le README est le point d'entrée des assistants
+
+Une app commence par « voici le README de vibe-kit, crée une app qui … ». La section « Créer une app — instructions pour l'assistant IA » du `README.md` doit donc rester juste et autonome ; le `AGENTS.md` et `docs/ONBOARDING.md` de vibe-template prennent le relais une fois le dépôt créé. Toute évolution de l'installation se répercute dans les trois.
 
 ## Compatibilité avec les apps
 
@@ -45,12 +49,12 @@ Le kit **ne lit ni n'écrit jamais** les tables, routes ou variables d'une app (
 
 1. `npm run typecheck` puis `npm run build`.
 2. **Tests** : `npm run test:install` (une fois) puis `npm test`.
-   - `test/kit.test.ts` : intégration dans le runtime Workers avec une base D1 locale (connexion par lien magique, accès restreint, invitations, domaines, back-office, profil, suppression en cascade) ;
+   - `test/kit.test.ts` : intégration dans le runtime Workers avec une base D1 locale (connexion locale, GitHub et relais, secret automatique, diagnostic, accès restreint, invitations, domaines, back-office, profil, suppression en cascade) ;
    - `test/protect.test.ts` : règles de protection ;
    - `test/cli.test.mjs` : CLI (`sync`, erreurs).
    Tout changement de comportement s'accompagne d'un test ; tout bug corrigé, d'un test qui l'aurait détecté.
 3. La CI (`.github/workflows/ci.yml`) rejoue tout cela et construit **vibe-template** avec le kit du commit : un changement qui casse le template casse la CI.
-4. Pour un essai manuel : dans `vibe-template`, `npm install ../vibe-kit`, `npm run kit:sync`, `npm run db:migrate`, `npm run dev` avec `KIT_EMAIL_LOG=1` dans `.dev.vars` (le lien de connexion s'affiche dans le terminal).
+4. Pour un essai manuel : dans `vibe-template`, `npm install ../vibe-kit`, `npm run kit:sync`, `npm run db:migrate`, `npm run dev` avec `KIT_DEV_LOGIN=1` dans `.dev.vars` (connexion de test par email sur localhost).
 
 **Ne jamais ajouter d'outil de test aux `devDependencies` racine** : une app qui installe le kit depuis GitHub installe ces dépendances pour le construire. Les outils de test vont dans `test/package.json`.
 

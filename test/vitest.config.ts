@@ -13,6 +13,7 @@ export default defineConfig(async () => {
           d1Databases: ["DB"],
           bindings: {
             KIT_AUTH_SECRET: "secret-de-test-0123456789abcdef0123456789",
+            KIT_DEV_LOGIN: "1",
             TEST_MIGRATIONS: migrations,
           },
         },

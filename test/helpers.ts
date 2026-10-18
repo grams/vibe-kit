@@ -11,17 +11,12 @@ export function makeApp(
   overrides: Partial<KitOptions<KitEnv, Profile>> = {},
   envOverrides: Partial<KitEnv> = {},
 ) {
-  const sent: { to: string; url: string }[] = [];
   const created: string[] = [];
   const kit = createKit<KitEnv, Profile>({
     appName: "App de test",
     admins: [ADMIN],
     protect: { default: "private", public: ["/api/public/*"] },
     profile: { table: "profile", defaults: (u) => ({ display_name: u.email.split("@")[0] }) },
-    sendEmail: async (msg) => {
-      const url = msg.text.match(/https?:\/\/\S+/)?.[0] ?? "";
-      sent.push({ to: msg.to, url });
-    },
     onUserCreated: async (user) => {
       created.push(user.email);
     },
@@ -50,18 +45,13 @@ export function makeApp(
   }
 
   /**
-   * Connexion par lien magique. Renvoie le cookie de session, ou null si la connexion
-   * est refusée (avec l'URL de redirection pour vérifier l'erreur).
+   * Connexion de test (KIT_DEV_LOGIN=1 sur localhost). Renvoie le cookie de session, ou null si la
+   * connexion est refusée (avec l'URL de redirection pour vérifier l'erreur).
    */
   async function login(email: string): Promise<{ cookie: string | null; location: string }> {
-    const res = await request("/api/kit/auth/sign-in/magic-link", {
-      method: "POST",
-      json: { email, callbackURL: "/app", errorCallbackURL: "/app?kit_error=1" },
-    });
-    if (res.status !== 200) throw new Error(`sign-in magic-link : ${res.status} ${await res.text()}`);
-    const link = sent.filter((m) => m.to === email).at(-1);
-    if (!link) throw new Error(`aucun lien envoyé à ${email}`);
-    const url = new URL(link.url);
+    const res = await request("/api/kit/dev/login", { method: "POST", json: { email, callbackURL: "/app" } });
+    if (res.status !== 200) throw new Error(`dev/login : ${res.status} ${await res.text()}`);
+    const url = new URL(((await res.json()) as { url: string }).url);
     const verify = await request(url.pathname + url.search);
     const location = verify.headers.get("location") ?? "";
     const cookies = verify.headers.getSetCookie().map((c) => c.split(";")[0]).filter((c) => !c.endsWith("="));
@@ -69,7 +59,7 @@ export function makeApp(
     return { cookie: hasSession ? cookies.join("; ") : null, location };
   }
 
-  return { app, kit, request, login, sent, created };
+  return { app, kit, request, login, created };
 }
 
 /** Vide les tables entre deux tests. */

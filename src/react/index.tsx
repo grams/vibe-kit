@@ -31,9 +31,13 @@ export interface KitUser {
 }
 
 export interface KitProviders {
+  github: boolean;
   google: boolean;
-  magicLink: boolean;
+  /** Mode local (KIT_DEV_LOGIN=1 sur localhost) : connexion de test par simple email. */
+  devLogin: boolean;
 }
+
+export type SocialProvider = "github" | "google";
 
 export interface KitState {
   user: KitUser | null;
@@ -43,10 +47,15 @@ export interface KitState {
   loading: boolean;
   /** Recharge l'utilisateur courant. */
   refresh(): Promise<void>;
-  /** Redirige vers Google ; revient sur `callbackURL` (défaut : page actuelle). */
+  /** Redirige vers GitHub ou Google ; revient sur `callbackURL` (défaut : page actuelle). */
+  signInWith(provider: SocialProvider, callbackURL?: string): Promise<void>;
+  /** Raccourci de signInWith("google"). */
   signInWithGoogle(callbackURL?: string): Promise<void>;
+  /** Raccourci de signInWith("github"). */
+  signInWithGitHub(callbackURL?: string): Promise<void>;
   /** Envoie un lien de connexion par email (si activé côté serveur). */
-  sendMagicLink(email: string, callbackURL?: string): Promise<void>;
+  /** Mode local uniquement : connexion de test par email, sans GitHub/Google. */
+  devSignIn(email: string, callbackURL?: string): Promise<void>;
   /** Déconnecte puis recharge l'état. */
   signOut(): Promise<void>;
 }
@@ -125,7 +134,7 @@ export function KitProvider({
     isAdmin: boolean;
     appName: string;
     providers: KitProviders;
-  }>({ user: null, isAdmin: false, appName: "", providers: { google: false, magicLink: false } });
+  }>({ user: null, isAdmin: false, appName: "", providers: { github: false, google: false, devLogin: false } });
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -141,32 +150,34 @@ export function KitProvider({
     refresh().catch((err) => console.error("[kit]", err));
   }, [refresh]);
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    async function signInWith(provider: SocialProvider, callbackURL?: string) {
+      const target = callbackURL ?? currentPath();
+      const res = await api<{ url?: string }>("/api/kit/auth/sign-in/social", {
+        body: { provider, callbackURL: target, errorCallbackURL: withParam(target, "kit_error", "1") },
+      });
+      if (res?.url) window.location.href = res.url;
+    }
+    return {
       ...data,
       loading,
       refresh,
-      async signInWithGoogle(callbackURL?: string) {
-        const target = callbackURL ?? currentPath();
-        const res = await api<{ url?: string }>("/api/kit/auth/sign-in/social", {
-          body: { provider: "google", callbackURL: target, errorCallbackURL: withParam(target, "kit_error", "1") },
+      signInWith,
+      signInWithGoogle: (callbackURL?: string) => signInWith("google", callbackURL),
+      signInWithGitHub: (callbackURL?: string) => signInWith("github", callbackURL),
+      async devSignIn(email: string, callbackURL?: string) {
+        const res = await api<{ url: string }>("/api/kit/dev/login", {
+          body: { email, callbackURL: callbackURL ?? currentPath() },
         });
-        if (res?.url) window.location.href = res.url;
-      },
-      async sendMagicLink(email: string, callbackURL?: string) {
-        const target = callbackURL ?? currentPath();
-        await api("/api/kit/auth/sign-in/magic-link", {
-          body: { email, callbackURL: target, errorCallbackURL: withParam(target, "kit_error", "1") },
-        });
+        window.location.href = res.url;
       },
       async signOut() {
         await api("/api/kit/auth/sign-out", { body: {} });
         await refresh();
       },
       components: { ...defaultComponents, ...components },
-    }),
-    [data, loading, refresh, components],
-  );
+    };
+  }, [data, loading, refresh, components]);
 
   return <KitContext.Provider value={value}>{children}</KitContext.Provider>;
 }
@@ -217,13 +228,16 @@ export function Protected({
 
 export interface LoginForm {
   providers: KitProviders;
-  email: string;
-  setEmail(value: string): void;
-  status: "idle" | "sending" | "sent" | "error";
-  /** Message d'erreur (accès refusé, envoi impossible…). */
+  /** Message d'erreur (accès refusé…). */
   error: string | null;
+  busy: boolean;
+  signInWith(provider: SocialProvider): void;
   signInWithGoogle(): void;
-  submitEmail(event?: FormEvent): void;
+  signInWithGitHub(): void;
+  /** Mode local (providers.devLogin) : email de test et envoi du formulaire. */
+  devEmail: string;
+  setDevEmail(value: string): void;
+  submitDevLogin(event?: FormEvent): void;
 }
 
 const ACCESS_DENIED =
@@ -232,8 +246,8 @@ const ACCESS_DENIED =
 /** Toute la logique d'un écran de connexion, pour construire sa propre interface. */
 export function useLoginForm(options: { callbackURL?: string } = {}): LoginForm {
   const kit = useKit();
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<LoginForm["status"]>("idle");
+  const [devEmail, setDevEmail] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Retour d'un échec de connexion (compte non autorisé, lien expiré…).
@@ -241,7 +255,6 @@ export function useLoginForm(options: { callbackURL?: string } = {}): LoginForm 
     const params = new URLSearchParams(window.location.search);
     if (params.has("kit_error") || params.has("error")) {
       setError(ACCESS_DENIED);
-      setStatus("error");
       params.delete("kit_error");
       params.delete("error");
       const query = params.toString();
@@ -250,30 +263,29 @@ export function useLoginForm(options: { callbackURL?: string } = {}): LoginForm 
   }, []);
 
   const callbackURL = options.callbackURL;
+  function run(action: Promise<void>) {
+    setError(null);
+    setBusy(true);
+    action.catch((err: Error) => {
+      setError(err.message);
+      setBusy(false);
+    });
+  }
+  function signInWith(provider: SocialProvider) {
+    run(kit.signInWith(provider, callbackURL));
+  }
   return {
     providers: kit.providers,
-    email,
-    setEmail,
-    status,
     error,
-    signInWithGoogle() {
-      setError(null);
-      kit.signInWithGoogle(callbackURL).catch((err: Error) => {
-        setError(err.message);
-        setStatus("error");
-      });
-    },
-    submitEmail(event) {
+    busy,
+    signInWith,
+    signInWithGoogle: () => signInWith("google"),
+    signInWithGitHub: () => signInWith("github"),
+    devEmail,
+    setDevEmail,
+    submitDevLogin(event) {
       event?.preventDefault();
-      setStatus("sending");
-      setError(null);
-      kit
-        .sendMagicLink(email, callbackURL)
-        .then(() => setStatus("sent"))
-        .catch((err: Error) => {
-          setError(err.message);
-          setStatus("error");
-        });
+      run(kit.devSignIn(devEmail, callbackURL));
     },
   };
 }
@@ -291,46 +303,58 @@ function GoogleIcon() {
   );
 }
 
+function GitHubIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" fill="currentColor">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  );
+}
+
 /** Page de connexion par défaut (remplaçable via components.LoginPage). */
 export function DefaultLoginPage() {
   const { appName } = useKit();
   const form = useLoginForm();
-  const { google, magicLink } = form.providers;
+  const { github, google, devLogin } = form.providers;
   return (
     <div className="kit-center">
       <div className="kit-card kit-login">
         <h1 className="kit-title">{appName || "Connexion"}</h1>
         <p className="kit-muted">Connectez-vous pour continuer.</p>
         {google && (
-          <button type="button" className="kit-btn kit-btn-outline kit-btn-block" onClick={form.signInWithGoogle}>
+          <button type="button" className="kit-btn kit-btn-outline kit-btn-block" onClick={form.signInWithGoogle} disabled={form.busy}>
             <GoogleIcon /> Continuer avec Google
           </button>
         )}
-        {google && magicLink && <p className="kit-divider">ou</p>}
-        {magicLink && (
-          <form className="kit-stack" onSubmit={form.submitEmail}>
-            <label className="kit-label" htmlFor="kit-email">
-              Recevoir un lien par email
+        {github && (
+          <button type="button" className="kit-btn kit-btn-outline kit-btn-block" onClick={form.signInWithGitHub} disabled={form.busy}>
+            <GitHubIcon /> Continuer avec GitHub
+          </button>
+        )}
+        {!github && !google && (
+          <p className="kit-muted">
+            La connexion en ligne n'est pas encore configurée. Demandez à l'assistant de terminer l'installation.
+          </p>
+        )}
+        {devLogin && (
+          <form className="kit-stack kit-dev" onSubmit={form.submitDevLogin}>
+            <label className="kit-label" htmlFor="kit-dev-email">
+              Mode local : se connecter avec un email (test uniquement)
             </label>
             <input
-              id="kit-email"
+              id="kit-dev-email"
               className="kit-input"
               type="email"
               required
-              autoComplete="email"
-              placeholder="vous@exemple.fr"
-              value={form.email}
-              onChange={(e) => form.setEmail(e.target.value)}
+              placeholder="admin@exemple.fr"
+              value={form.devEmail}
+              onChange={(e) => form.setDevEmail(e.target.value)}
             />
-            <button className="kit-btn kit-btn-primary" type="submit" disabled={form.status === "sending"}>
-              Envoyer le lien
+            <button className="kit-btn kit-btn-primary" type="submit" disabled={form.busy}>
+              Se connecter (local)
             </button>
           </form>
         )}
-        {!google && !magicLink && (
-          <p className="kit-error">Aucune méthode de connexion n'est configurée (KIT_GOOGLE_CLIENT_ID manquant).</p>
-        )}
-        {form.status === "sent" && <p className="kit-success">Lien envoyé ! Vérifiez votre boîte mail.</p>}
         {form.error && (
           <p className="kit-error" role="alert">
             {form.error}
@@ -600,7 +624,7 @@ export function DefaultAdmin({ sections = [] }: KitAdminProps) {
                 Inviter
               </button>
             </form>
-            <p className="kit-muted">La personne invitée se connecte ensuite avec ce compte (Google ou email).</p>
+            <p className="kit-muted">La personne invitée se connecte ensuite avec ce compte (GitHub ou Google).</p>
             {admin.invitations.length === 0 ? (
               <p className="kit-muted">Aucune invitation.</p>
             ) : (

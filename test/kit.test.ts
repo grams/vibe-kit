@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
 import { ADMIN, makeApp, resetDb } from "./helpers";
 import { createProfileStore } from "../src/profile";
+import { resetSecretCache } from "../src/secret";
 
 beforeEach(resetDb);
 
@@ -16,7 +17,7 @@ describe("session et protection des routes", () => {
     expect(me.user).toBeNull();
     expect(me.isAdmin).toBe(false);
     expect(me.appName).toBe("App de test");
-    expect(me.providers).toEqual({ google: false, magicLink: true });
+    expect(me.providers).toEqual({ github: false, google: false, devLogin: true });
   });
 
   it("bloque les routes privées sans session et laisse passer les publiques", async () => {
@@ -33,19 +34,38 @@ describe("session et protection des routes", () => {
     expect(await json(res)).toEqual({ error: "Route inconnue" });
   });
 
-  it("désactive le lien magique sans service d'email", async () => {
-    const { request } = makeApp({ sendEmail: undefined });
-    const me = await json(await request("/api/kit/me"));
-    expect(me.providers.magicLink).toBe(false);
-    const res = await request("/api/kit/auth/sign-in/magic-link", { method: "POST", json: { email: ADMIN } });
-    expect(res.status).toBe(404);
+  it("génère et réutilise un secret de session si KIT_AUTH_SECRET est absent", async () => {
+    resetSecretCache();
+    const { request, login } = makeApp({}, { KIT_AUTH_SECRET: "" });
+    const { cookie } = await login(ADMIN);
+    expect(cookie).not.toBeNull();
+    const row = await env.DB.prepare("SELECT value FROM kit_settings WHERE key = 'auth_secret'").first<{ value: string }>();
+    expect(JSON.parse(row!.value)).toHaveLength(43);
+    // Une autre instance (nouvel isolat) relit le même secret : la session reste valide.
+    resetSecretCache();
+    const again = makeApp({}, { KIT_AUTH_SECRET: "" });
+    const me = await json(await again.request("/api/kit/me", { cookie: cookie! }));
+    expect(me.user?.email).toBe(ADMIN);
+    resetSecretCache();
   });
 
-  it("explique clairement un secret manquant", async () => {
-    const { request } = makeApp({}, { KIT_AUTH_SECRET: "" });
-    const res = await request("/api/kit/me");
-    expect(res.status).toBe(500);
-    expect((await json(res)).error).toContain("KIT_AUTH_SECRET");
+  it("active la connexion GitHub quand l'ID et le secret sont définis", async () => {
+    const { request } = makeApp({}, { KIT_GITHUB_CLIENT_ID: "Iv1.test", KIT_GITHUB_CLIENT_SECRET: "s" });
+    expect((await json(await request("/api/kit/me"))).providers.github).toBe(true);
+    const res = await request("/api/kit/auth/sign-in/social", { method: "POST", json: { provider: "github", callbackURL: "/app" } });
+    const url = new URL((await json(res)).url);
+    expect(url.host).toBe("github.com");
+    expect(url.searchParams.get("client_id")).toBe("Iv1.test");
+  });
+
+  it("fait passer la connexion des aperçus par la production (relais)", async () => {
+    const { request } = makeApp(
+      {},
+      { KIT_GITHUB_CLIENT_ID: "Iv1.test", KIT_GITHUB_CLIENT_SECRET: "s", KIT_PRODUCTION_URL: "https://mon-app.compte.workers.dev/" },
+    );
+    const res = await request("/api/kit/auth/sign-in/social", { method: "POST", json: { provider: "github", callbackURL: "/app" } });
+    const url = new URL((await json(res)).url);
+    expect(url.searchParams.get("redirect_uri")).toBe("https://mon-app.compte.workers.dev/api/kit/auth/callback/github");
   });
 });
 
@@ -228,5 +248,79 @@ describe("profil d'app", () => {
   it("refuse une table de profil préfixée kit_", () => {
     expect(() => createProfileStore({ table: "kit_profile" })).toThrow(/réservé au socle/);
     expect(() => createProfileStore({ table: "profile; DROP" })).toThrow(/invalide/);
+  });
+});
+
+describe("connexion en mode local", () => {
+  it("connecte par simple email sur localhost avec KIT_DEV_LOGIN=1", async () => {
+    const { request, login } = makeApp();
+    const { cookie } = await login(ADMIN.toUpperCase());
+    expect((await json(await request("/api/kit/me", { cookie: cookie! }))).user.email).toBe(ADMIN);
+  });
+
+  it("applique les règles d'accès à la connexion locale", async () => {
+    const { login } = makeApp();
+    const { cookie, location } = await login("inconnu@ailleurs.com");
+    expect(cookie).toBeNull();
+    expect(location).toContain("kit_error=1");
+  });
+
+  it("refuse la connexion locale sans KIT_DEV_LOGIN", async () => {
+    const { request } = makeApp({}, { KIT_DEV_LOGIN: "" });
+    expect((await json(await request("/api/kit/me"))).providers.devLogin).toBe(false);
+    expect((await request("/api/kit/dev/login", { method: "POST", json: { email: ADMIN } })).status).toBe(404);
+    // Et le lien magique interne n'est pas exposé.
+    expect((await request("/api/kit/auth/sign-in/magic-link", { method: "POST", json: { email: ADMIN } })).status).toBe(404);
+  });
+
+  it("refuse la connexion locale hors de localhost, même avec KIT_DEV_LOGIN", async () => {
+    const { app } = makeApp();
+    const base = "https://mon-app.compte.workers.dev";
+    const post = (path: string) =>
+      app.request(`${base}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: base },
+        body: JSON.stringify({ email: ADMIN }),
+      }, env);
+    expect((await post("/api/kit/dev/login")).status).toBe(404);
+    expect((await post("/api/kit/auth/sign-in/magic-link")).status).toBe(404);
+    const me = (await (await app.request(`${base}/api/kit/me`, {}, env)).json()) as any;
+    expect(me.providers.devLogin).toBe(false);
+    const status = (await (await app.request(`${base}/api/kit/status`, {}, env)).json()) as any;
+    expect(status.devLoginVar).toBe(true);
+  });
+});
+
+describe("diagnostic d'installation", () => {
+  it("signale ce qui manque, sans rien de secret", async () => {
+    const { request } = makeApp({ admins: ["admin@exemple.fr"] });
+    const status = await json(await request("/api/kit/status"));
+    expect(status).toMatchObject({
+      ready: false,
+      database: "ok",
+      loginReady: false,
+      admins: "placeholder",
+      productionUrl: false,
+      providers: { github: false, google: false },
+    });
+    expect(JSON.stringify(status)).not.toContain("secret-de-test");
+  });
+
+  it("est prêt quand base, connexion et admins sont configurés", async () => {
+    const { request } = makeApp({}, { KIT_GITHUB_CLIENT_ID: "Iv1.test", KIT_GITHUB_CLIENT_SECRET: "s" });
+    const status = await json(await request("/api/kit/status"));
+    expect(status).toMatchObject({ ready: true, loginReady: true, admins: "ok", githubPartial: false });
+  });
+
+  it("repère un identifiant GitHub sans secret", async () => {
+    const { request } = makeApp({}, { KIT_GITHUB_CLIENT_ID: "Iv1.test" });
+    expect((await json(await request("/api/kit/status"))).githubPartial).toBe(true);
+  });
+
+  it("répond même sans base D1", async () => {
+    const { request } = makeApp({}, { DB: undefined as unknown as D1Database });
+    const res = await request("/api/kit/status");
+    expect(res.status).toBe(200);
+    expect((await json(res)).database).toBe("missing-binding");
   });
 });

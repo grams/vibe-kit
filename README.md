@@ -1,8 +1,31 @@
 # vibe-kit
 
-Socle pour apps **Cloudflare Workers + React** : connexion Google (et lien par email en option) sur D1, contrôle d'accès (admins, invitations, domaines autorisés), back-office extensible, profil d'app séparé du socle.
+Socle pour créer des apps web **sans être développeur**, en les décrivant à un assistant IA. Les apps sont hébergées gratuitement sur Cloudflare : connexion avec un compte Google (ou GitHub), accès sur invitation, back-office, base de données.
 
-Le plus simple est de partir de **[vibe-template](https://github.com/grams/vibe-template)**, qui l'utilise et contient un `AGENTS.md` pour les agents IA.
+**Pour commencer**, ouvrir une conversation avec Claude (ou un autre assistant) et écrire :
+
+> Voici le README de vibe-kit : https://github.com/grams/vibe-kit — crée-moi une app qui …
+
+L'assistant s'occupe du reste et guide pas à pas. Le reste de ce document est la référence technique.
+
+---
+
+## Créer une app — instructions pour l'assistant IA
+
+La personne qui te parle **n'est pas développeuse** : elle n'a peut-être jamais utilisé GitHub ni Cloudflare. Tu fais le travail, tu la guides **une étape à la fois**, en mots simples, et tu vérifies chaque étape avant de passer à la suivante.
+
+**1. Créer le dépôt de l'app à partir du modèle [`grams/vibe-template`](https://github.com/grams/vibe-template).**
+
+- Si tu peux créer un dépôt GitHub toi-même (connecteur GitHub, `gh`, ou l'API `POST /repos/grams/vibe-template/generate`), fais-le : nom court en minuscules avec tirets tiré de l'idée de l'app (ex. `liste-courses`), privé par défaut.
+- Sinon, guide la personne :
+  1. Si elle n'a pas de compte GitHub : https://github.com/signup (email, mot de passe, nom d'utilisateur ; confirmer l'email).
+  2. Ouvrir https://github.com/new?template_owner=grams&template_name=vibe-template
+  3. **Repository name** : le nom que tu proposes ; **Private** ; cliquer **Create repository**.
+  4. Te donner accès à ce dépôt (dans Claude : ajouter le dépôt GitHub à la conversation) et te coller son adresse.
+
+**2. Ouvrir le dépôt créé et suivre son `AGENTS.md`.** Il prend le relais : vérification de l'installation (`npm run doctor`), installation guidée sur Cloudflare (`docs/ONBOARDING.md`), puis construction de l'app demandée, testée en local puis en ligne.
+
+Ne commence pas à coder l'app avant que l'installation ne soit terminée : la personne doit pouvoir voir et tester son app en ligne dès les premiers changements.
 
 ## Installation
 
@@ -63,7 +86,7 @@ export default kit.app;
 | `isAdmin(c)` | L'utilisateur connecté est-il admin ? |
 | `kit.profile.get(c)` / `kit.profile.update(c, patch)` | Profil de l'app, créé à la première lecture avec `defaults` |
 
-Options de `createKit` : `appName`, `admins`, `protect` (`default`, `public`, `private` — motifs exacts ou `/préfixe/*`, sur les routes `/api`), `profile` (`table`, `defaults`), `onUserCreated`, `sendEmail`, `sessionDays`.
+Options de `createKit` : `appName`, `admins`, `protect` (`default`, `public`, `private` — motifs exacts ou `/préfixe/*`, sur les routes `/api`), `profile` (`table`, `defaults`), `onUserCreated`, `sessionDays`.
 
 ### Accès
 
@@ -102,13 +125,19 @@ import "vibe-kit/react/styles.css";
 | Nom | Obligatoire | Rôle |
 |---|---|---|
 | `DB` (binding D1) | oui | Base partagée (tables `kit_*` + tables de l'app) |
-| `KIT_AUTH_SECRET` | oui | Signature des sessions |
-| `KIT_GOOGLE_CLIENT_ID` / `KIT_GOOGLE_CLIENT_SECRET` | pour Google | Connexion Google ; redirection : `https://<domaine>/api/kit/auth/callback/google` |
-| `KIT_BASE_URL` | non | URL publique (déduite de la requête sinon) |
-| `KIT_PRODUCTION_URL` | recommandé | URL de production (`https://mon-app.compte.workers.dev`) : la connexion Google des aperçus passe par la production, une seule URL de redirection à déclarer chez Google |
+| `KIT_GOOGLE_CLIENT_ID` / `KIT_GOOGLE_CLIENT_SECRET` | pour Google | Connexion Google, celle que tout le monde a (l'ID n'est pas secret : variable dans `wrangler.jsonc` ; le secret dans Cloudflare) ; URL de retour : `https://<production>/api/kit/auth/callback/google` |
+| `KIT_GITHUB_CLIENT_ID` / `KIT_GITHUB_CLIENT_SECRET` | pour GitHub | Connexion GitHub (facultative) ; URL de retour : `https://<production>/api/kit/auth/callback/github` |
+| `KIT_PRODUCTION_URL` | recommandé | URL de production (`https://mon-app.compte.workers.dev`) : la connexion des aperçus passe par la production, une seule URL de retour à déclarer chez GitHub/Google |
+| `KIT_AUTH_SECRET` | non | Secret des sessions ; généré automatiquement et stocké dans `kit_settings` s'il est absent |
 | `KIT_ADMIN_EMAILS` | non | Admins en plus de l'option `admins` |
-| `KIT_RESEND_API_KEY` / `KIT_EMAIL_FROM` | non | Active le lien de connexion par email (Resend) |
-| `KIT_EMAIL_LOG` | non | `1` en local : lien par email affiché dans les logs, sans envoi |
+| `KIT_BASE_URL` | non | URL publique (déduite de la requête sinon) |
+| `KIT_DEV_LOGIN` | non | `1` dans `.dev.vars` : connexion de test par simple email, **uniquement sur localhost** |
+
+`GET /api/kit/status` (public, sans donnée secrète) indique si l'installation est prête : base, connexion configurée, admins, URL de production. L'assistant s'en sert pour vérifier un déploiement.
+
+## Tester en local
+
+Dans `.dev.vars` de l'app : `KIT_DEV_LOGIN=1`. Puis `npm run db:migrate` et `npm run dev` → http://localhost:5173 : la page de connexion propose « Mode local : se connecter avec un email ». Les règles d'accès s'appliquent (utiliser un email de la liste `admins`). Cette connexion est refusée hors de localhost, même si la variable est définie.
 
 ## Migrations
 

@@ -93,6 +93,7 @@
 
 .kit-divider { display: flex; align-items: center; gap: 12px; color: var(--kit-muted); font-size: 0.85rem; margin: 4px 0; }
 .kit-divider::before, .kit-divider::after { content: ""; flex: 1; border-top: 1px solid var(--kit-border); }
+.kit-dev { border: 1px dashed var(--kit-border); border-radius: var(--kit-radius); padding: 12px; }
 .kit-error { color: var(--kit-danger); margin: 0; font-size: 0.92rem; }
 .kit-success { color: var(--kit-success); margin: 0; font-size: 0.92rem; }
 

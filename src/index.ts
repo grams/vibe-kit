@@ -9,11 +9,11 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { betterAuth } from "better-auth";
 import { magicLink, oAuthProxy } from "better-auth/plugins";
-import { sendEmail, magicLinkEmail, type SendEmail } from "./email.js";
 import { createProfileStore, type ProfileOptions, type ProfileStore } from "./profile.js";
 import { compileRules, type ProtectOptions } from "./protect.js";
 import { adminEmails, adminRoutes, canSignUp, markInvitationAccepted } from "./access.js";
 import { VERSION } from "./version.js";
+import { resolveAuthSecret } from "./secret.js";
 
 export { VERSION };
 
@@ -23,24 +23,26 @@ export interface KitEnv {
   DB: D1Database;
   /** Fichiers statiques (binding "ASSETS"), servis quand aucune route de l'app ne correspond. */
   ASSETS?: Fetcher;
-  /** Secret de signature des sessions. */
-  KIT_AUTH_SECRET: string;
+  /** Secret de signature des sessions. Facultatif : généré et stocké dans kit_settings s'il est absent. */
+  KIT_AUTH_SECRET?: string;
   /** URL publique de l'app ; déduite de la requête si absente. */
   KIT_BASE_URL?: string;
   /**
-   * URL de production, ex. https://mon-app.compte.workers.dev. Si définie, la connexion Google des
-   * aperçus passe par la production : une seule URL de redirection à déclarer chez Google.
+   * URL de production, ex. https://mon-app.compte.workers.dev. Si définie, la connexion GitHub/Google
+   * des aperçus passe par la production : une seule URL de retour à déclarer chez le fournisseur.
    */
   KIT_PRODUCTION_URL?: string;
+  /** Connexion GitHub : activée si les deux sont définis (l'ID peut être une simple variable). */
+  KIT_GITHUB_CLIENT_ID?: string;
+  KIT_GITHUB_CLIENT_SECRET?: string;
   /** Connexion Google : activée si les deux sont définis. */
   KIT_GOOGLE_CLIENT_ID?: string;
   KIT_GOOGLE_CLIENT_SECRET?: string;
-  /** Envoi des emails via Resend ; sans clé, le lien magique est affiché dans les logs. */
-  KIT_RESEND_API_KEY?: string;
-  /** Expéditeur, ex. "Mon app <noreply@mondomaine.fr>". */
-  KIT_EMAIL_FROM?: string;
-  /** "1" en local uniquement : active le lien magique et l'affiche dans les logs au lieu de l'envoyer. */
-  KIT_EMAIL_LOG?: string;
+  /**
+   * "1" en local uniquement (.dev.vars) : connexion de test par simple email, sans GitHub/Google.
+   * Ne fonctionne que sur localhost, même si la variable est définie ailleurs.
+   */
+  KIT_DEV_LOGIN?: string;
   /** Admins supplémentaires (emails séparés par des virgules), en plus de l'option `admins`. */
   KIT_ADMIN_EMAILS?: string;
 }
@@ -66,7 +68,7 @@ export type KitBindings<E extends KitEnv = KitEnv> = { Bindings: E; Variables: K
 export type KitContext<E extends KitEnv = KitEnv> = Context<KitBindings<E>>;
 
 export interface KitOptions<E extends KitEnv, P> {
-  /** Nom affiché sur la page de connexion et dans les emails. */
+  /** Nom affiché sur la page de connexion. */
   appName: string;
   /** Emails des administrateurs de l'app (accès au back-office, toujours autorisés à se connecter). */
   admins?: string[];
@@ -76,8 +78,6 @@ export interface KitOptions<E extends KitEnv, P> {
   profile?: ProfileOptions<P>;
   /** Appelé une fois, juste après la création d'un utilisateur. */
   onUserCreated?: (user: KitUser, env: E) => Promise<void> | void;
-  /** Envoi d'email personnalisé. Sans lui ni KIT_RESEND_API_KEY, le lien magique est désactivé. */
-  sendEmail?: SendEmail;
   /** Durée de session en jours (défaut 30). */
   sessionDays?: number;
 }
@@ -105,30 +105,36 @@ export function createKit<E extends KitEnv = KitEnv, P extends Record<string, un
   const app = new Hono<KitBindings<E>>();
 
   // Une instance d'auth par origine (localhost en dev, domaine en prod), réutilisée entre requêtes.
-  const authCache = new Map<string, ReturnType<typeof createAuth>>();
+  const authCache = new Map<string, Promise<ReturnType<typeof createAuth>>>();
   const authFor = (c: KitContext<E>) => {
     const origin = new URL(c.req.url).origin;
     let auth = authCache.get(origin);
     if (!auth) {
-      auth = createAuth(c.env, origin, options);
+      auth = resolveAuthSecret(c.env.DB, c.env.KIT_AUTH_SECRET).then(({ secret }) =>
+        createAuth(c.env, origin, secret, options),
+      );
+      auth.catch(() => authCache.delete(origin));
       authCache.set(origin, auth);
     }
     return auth;
   };
 
+  // Diagnostic de l'installation (public, sans donnée sensible) : utilisé par l'assistant pour vérifier
+  // qu'un déploiement est prêt. Déclaré avant tout accès à la base pour répondre même si elle est mal configurée.
+  app.get("/api/kit/status", async (c) => c.json(await installStatus(c.env, options)));
+
   // Configuration manquante : message explicite plutôt qu'une erreur obscure.
   app.use("*", async (c, next) => {
     if (!c.env.DB) return c.json({ error: "vibe-kit : binding D1 'DB' manquant dans wrangler.jsonc" }, 500);
-    if (!c.env.KIT_AUTH_SECRET) return c.json({ error: "vibe-kit : secret KIT_AUTH_SECRET manquant" }, 500);
     await next();
   });
 
   // Routes d'authentification (Better Auth).
-  app.on(["GET", "POST"], `${AUTH_BASE}/*`, (c) => authFor(c).handler(c.req.raw));
+  app.on(["GET", "POST"], `${AUTH_BASE}/*`, async (c) => (await authFor(c)).handler(c.req.raw));
 
   // Utilisateur courant + protection des pages et des routes.
   app.use("*", async (c, next) => {
-    const session = await authFor(c).api.getSession({ headers: c.req.raw.headers });
+    const session = await (await authFor(c)).api.getSession({ headers: c.req.raw.headers });
     const user = (session?.user as KitUser | undefined) ?? null;
     c.set("user", user);
     c.set("isAdmin", Boolean(user && adminsFor(c).has(user.email.toLowerCase())));
@@ -142,13 +148,36 @@ export function createKit<E extends KitEnv = KitEnv, P extends Record<string, un
       user: c.get("user"),
       isAdmin: c.get("isAdmin"),
       appName: options.appName,
-      providers: {
-        google: Boolean(c.env.KIT_GOOGLE_CLIENT_ID && c.env.KIT_GOOGLE_CLIENT_SECRET),
-        magicLink: emailEnabled(c.env, options),
-      },
+      providers: providersFor(c.env, c.req.url),
       version: VERSION,
     }),
   );
+
+  // Mode local : connexion de test par email (KIT_DEV_LOGIN=1 et localhost uniquement).
+  app.post("/api/kit/dev/login", async (c) => {
+    if (!devLoginAllowed(c.env, c.req.url)) return c.json({ error: "Route inconnue" }, 404);
+    type DevLoginBody = { email?: string; callbackURL?: string };
+    const body = await c.req.json<DevLoginBody>().catch((): DevLoginBody => ({}));
+    const callbackURL = body.callbackURL?.startsWith("/") ? body.callbackURL : "/";
+    const email = (body.email ?? "").trim().toLowerCase();
+    if (!email) return c.json({ error: "Email manquant" }, 400);
+    const origin = new URL(c.req.url).origin;
+    const res = await (await authFor(c)).handler(
+      new Request(`${origin}${AUTH_BASE}/sign-in/magic-link`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({
+          email,
+          callbackURL,
+          errorCallbackURL: `${callbackURL}${callbackURL.includes("?") ? "&" : "?"}kit_error=1`,
+        }),
+      }),
+    );
+    const url = devLinks.get(email);
+    devLinks.delete(email);
+    if (!res.ok || !url) return c.json({ error: "Connexion locale impossible" }, 500);
+    return c.json({ url });
+  });
 
   // Back-office du socle : accès, invitations, utilisateurs.
   app.use("/api/kit/admin/*", requireAdmin);
@@ -172,30 +201,30 @@ export function createKit<E extends KitEnv = KitEnv, P extends Record<string, un
   return { app, profile: createProfileStore<E, P>(options.profile) };
 }
 
-function createAuth<E extends KitEnv, P>(env: E, origin: string, options: KitOptions<E, P>) {
+function createAuth<E extends KitEnv, P>(env: E, origin: string, secret: string, options: KitOptions<E, P>) {
   const baseURL = env.KIT_BASE_URL || origin;
   const productionURL = env.KIT_PRODUCTION_URL?.replace(/\/+$/, "");
-  const google =
-    env.KIT_GOOGLE_CLIENT_ID && env.KIT_GOOGLE_CLIENT_SECRET
-      ? {
-          google: {
-            clientId: env.KIT_GOOGLE_CLIENT_ID,
-            clientSecret: env.KIT_GOOGLE_CLIENT_SECRET,
-            // Avec un relais : Google renvoie toujours vers la production, qui retransmet à l'aperçu.
-            ...(productionURL ? { redirectURI: `${productionURL}${AUTH_BASE}/callback/google` } : {}),
-          },
-        }
-      : undefined;
-  const send = options.sendEmail ?? ((msg) => sendEmail(env, msg));
+  // Avec un relais : le fournisseur renvoie toujours vers la production, qui retransmet à l'aperçu.
+  const redirect = (id: string) => (productionURL ? { redirectURI: `${productionURL}${AUTH_BASE}/callback/${id}` } : {});
+  const socialProviders = {
+    ...(env.KIT_GITHUB_CLIENT_ID && env.KIT_GITHUB_CLIENT_SECRET
+      ? { github: { clientId: env.KIT_GITHUB_CLIENT_ID, clientSecret: env.KIT_GITHUB_CLIENT_SECRET, ...redirect("github") } }
+      : {}),
+    ...(env.KIT_GOOGLE_CLIENT_ID && env.KIT_GOOGLE_CLIENT_SECRET
+      ? { google: { clientId: env.KIT_GOOGLE_CLIENT_ID, clientSecret: env.KIT_GOOGLE_CLIENT_SECRET, ...redirect("google") } }
+      : {}),
+  };
+  const hasSocial = Object.keys(socialProviders).length > 0;
   const trustedOrigins = [baseURL, ...(productionURL ? [productionURL, ...previewOrigins(productionURL)] : [])];
   const plugins = [
-    ...(productionURL && google ? [oAuthProxy({ productionURL })] : []),
-    ...(emailEnabled(env, options)
+    ...(productionURL && hasSocial ? [oAuthProxy({ productionURL })] : []),
+    // Connexion de test locale : lien à usage unique généré côté serveur, jamais envoyé ni exposé en ligne.
+    ...(devLoginAllowed(env, origin)
       ? [
           magicLink({
-            expiresIn: 60 * 15,
+            expiresIn: 60 * 5,
             sendMagicLink: async ({ email, url }) => {
-              await send(magicLinkEmail(options.appName, email, url));
+              devLinks.set(email.toLowerCase(), url);
             },
           }),
         ]
@@ -206,7 +235,7 @@ function createAuth<E extends KitEnv, P>(env: E, origin: string, options: KitOpt
     appName: options.appName,
     baseURL,
     basePath: AUTH_BASE,
-    secret: env.KIT_AUTH_SECRET,
+    secret,
     trustedOrigins,
     database: env.DB,
     user: { modelName: "kit_user" },
@@ -220,7 +249,7 @@ function createAuth<E extends KitEnv, P>(env: E, origin: string, options: KitOpt
     account: { modelName: "kit_account" },
     verification: { modelName: "kit_verification" },
     advanced: { cookiePrefix: "kit" },
-    socialProviders: google,
+    socialProviders,
     databaseHooks: {
       user: {
         create: {
@@ -255,9 +284,54 @@ function previewOrigins(productionURL: string): string[] {
   }
 }
 
-function emailEnabled(env: KitEnv, options: { sendEmail?: SendEmail }) {
-  return Boolean(options.sendEmail || env.KIT_RESEND_API_KEY || env.KIT_EMAIL_LOG === "1");
+function providersFor(env: KitEnv, url?: string) {
+  return {
+    github: Boolean(env.KIT_GITHUB_CLIENT_ID && env.KIT_GITHUB_CLIENT_SECRET),
+    google: Boolean(env.KIT_GOOGLE_CLIENT_ID && env.KIT_GOOGLE_CLIENT_SECRET),
+    devLogin: Boolean(url && devLoginAllowed(env, url)),
+  };
 }
+
+/** Liens de connexion locale en attente, par email (consommés aussitôt par /api/kit/dev/login). */
+const devLinks = new Map<string, string>();
+
+/** Connexion de test : seulement avec KIT_DEV_LOGIN=1 ET sur localhost (jamais en ligne). */
+function devLoginAllowed(env: KitEnv, url: string) {
+  if (env.KIT_DEV_LOGIN !== "1") return false;
+  const { hostname } = new URL(url);
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/** État de l'installation, pour l'assistant et le dépannage. Aucune valeur secrète n'est renvoyée. */
+async function installStatus(env: KitEnv, options: KitOptions<any, any>) {
+  const providers = providersFor(env);
+  let database: "ok" | "missing-binding" | "missing-tables" = "ok";
+  if (!env.DB) database = "missing-binding";
+  else {
+    try {
+      await env.DB.prepare("SELECT 1 FROM kit_user LIMIT 1").first();
+      await env.DB.prepare("SELECT 1 FROM kit_settings LIMIT 1").first();
+    } catch {
+      database = "missing-tables";
+    }
+  }
+  const admins = adminEmails(options.admins, env.KIT_ADMIN_EMAILS);
+  const placeholderAdmins = [...admins].every((e) => /@(exemple|example)\.(fr|com|org)$/.test(e));
+  const checks = {
+    database,
+    secret: env.KIT_AUTH_SECRET ? "env" : "auto",
+    providers,
+    loginReady: providers.github || providers.google,
+    admins: admins.size === 0 ? "missing" : placeholderAdmins ? "placeholder" : "ok",
+    productionUrl: Boolean(env.KIT_PRODUCTION_URL),
+    githubPartial: Boolean(env.KIT_GITHUB_CLIENT_ID) !== Boolean(env.KIT_GITHUB_CLIENT_SECRET),
+    // KIT_DEV_LOGIN ne doit exister qu'en local (.dev.vars) : signalé s'il est défini ailleurs.
+    devLoginVar: env.KIT_DEV_LOGIN === "1",
+  };
+  const ready = checks.database === "ok" && checks.loginReady && checks.admins === "ok";
+  return { ready, version: VERSION, appName: options.appName, ...checks };
+}
+
 
 /** Réserve une route aux admins (403). Pour les routes du back-office propres à l'app. */
 export const requireAdmin: MiddlewareHandler<{ Variables: KitVariables }> = async (c, next) => {
@@ -292,4 +366,3 @@ export function currentUser(c: KitContext<any>): KitUser {
 export type { ProtectOptions } from "./protect.js";
 export type { AccessSettings, AccessMode, Invitation, AdminUser } from "./access.js";
 export type { ProfileOptions, ProfileStore } from "./profile.js";
-export { sendEmail, type SendEmail, type EmailMessage } from "./email.js";
